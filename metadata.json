@@ -1,0 +1,6 @@
+{
+  "name": "Lite CRM",
+  "description": "A minimalistic CRM application for tracking calls and managing leads.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
