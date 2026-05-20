@@ -118,9 +118,37 @@ fun MainAppScreen(viewModel: CrmViewModel) {
     var showAddLeadDialog by remember { mutableStateOf(false) }
     var editingLeadForNotes by remember { mutableStateOf<LeadEntity?>(null) }
     var deletingLeadConform by remember { mutableStateOf<LeadEntity?>(null) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+
+    // Reset search query when active tab changes
+    LaunchedEffect(activeTab) {
+        searchQuery = ""
+    }
 
     val callLogs by viewModel.callLogs.collectAsStateWithLifecycle()
     val leads by viewModel.leads.collectAsStateWithLifecycle()
+
+    val filteredCallLogs = remember(callLogs, searchQuery) {
+        if (searchQuery.isBlank()) {
+            callLogs
+        } else {
+            val q = searchQuery.trim().lowercase()
+            callLogs.filter { log ->
+                log.contactName.lowercase().contains(q) || log.phoneNumber.lowercase().contains(q)
+            }
+        }
+    }
+
+    val filteredLeads = remember(leads, searchQuery) {
+        if (searchQuery.isBlank()) {
+            leads
+        } else {
+            val q = searchQuery.trim().lowercase()
+            leads.filter { lead ->
+                lead.name.lowercase().contains(q) || lead.phoneNumber.lowercase().contains(q) || lead.notes.lowercase().contains(q)
+            }
+        }
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -215,46 +243,99 @@ fun MainAppScreen(viewModel: CrmViewModel) {
         },
         contentWindowInsets = WindowInsets.safeDrawing
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            AnimatedContent(
-                targetState = activeTab,
-                transitionSpec = {
-                    (fadeIn() + slideInHorizontally { width -> if (targetState == Tab.Leads) width else -width })
-                        .togetherWith(fadeOut() + slideOutHorizontally { width -> if (targetState == Tab.Leads) -width else width })
+            // Elegant & Modern Search Bar at the Top of both sections
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .testTag("global_search_bar"),
+                placeholder = {
+                    Text(
+                        text = if (activeTab == Tab.Calls) "Search logs..." else "Search leads...",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                    )
                 },
-                label = "TabTransition"
-            ) { tab ->
-                when (tab) {
-                    Tab.Calls -> {
-                        CallsScreen(
-                            callLogs = callLogs,
-                            hasPermission = hasCallLogPermission,
-                            onRequestPermission = {
-                                launcher.launch(
-                                    arrayOf(
-                                        Manifest.permission.READ_CALL_LOG,
-                                        Manifest.permission.READ_CONTACTS,
-                                        Manifest.permission.READ_PHONE_STATE
-                                    )
-                                )
-                            },
-                            onSyncDeviceLogs = { viewModel.syncCallLogs(context) },
-                            onPromote = { viewModel.promoteToLead(it) },
-                            onReject = { viewModel.rejectCallLog(it) },
-                            onGenerateSample = { viewModel.generateSampleCallLogs() }
-                        )
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search icon",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear search",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
-                    Tab.Leads -> {
-                        LeadsScreen(
-                            leads = leads,
-                            onEditNotes = { editingLeadForNotes = it },
-                            onLongClickLead = { deletingLeadConform = it }
-                        )
+                },
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f),
+                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                    cursorColor = MaterialTheme.colorScheme.primary
+                ),
+                shape = RoundedCornerShape(14.dp)
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f)
+            ) {
+                AnimatedContent(
+                    targetState = activeTab,
+                    transitionSpec = {
+                        (fadeIn() + slideInHorizontally { width -> if (targetState == Tab.Leads) width else -width })
+                            .togetherWith(fadeOut() + slideOutHorizontally { width -> if (targetState == Tab.Leads) -width else width })
+                    },
+                    label = "TabTransition"
+                ) { tab ->
+                    when (tab) {
+                        Tab.Calls -> {
+                            CallsScreen(
+                                callLogs = filteredCallLogs,
+                                searchQuery = searchQuery,
+                                hasPermission = hasCallLogPermission,
+                                onRequestPermission = {
+                                    launcher.launch(
+                                        arrayOf(
+                                            Manifest.permission.READ_CALL_LOG,
+                                            Manifest.permission.READ_CONTACTS,
+                                            Manifest.permission.READ_PHONE_STATE
+                                        )
+                                    )
+                                },
+                                onSyncDeviceLogs = { viewModel.syncCallLogs(context) },
+                                onPromote = { viewModel.promoteToLead(it) },
+                                onReject = { viewModel.rejectCallLog(it) },
+                                onGenerateSample = { viewModel.generateSampleCallLogs() }
+                            )
+                        }
+                        Tab.Leads -> {
+                            LeadsScreen(
+                                leads = filteredLeads,
+                                searchQuery = searchQuery,
+                                onEditNotes = { editingLeadForNotes = it },
+                                onLongClickLead = { deletingLeadConform = it }
+                            )
+                        }
                     }
                 }
             }
@@ -311,6 +392,7 @@ fun formatRelativeTime(timestamp: Long): String {
 @Composable
 fun CallsScreen(
     callLogs: List<CallLogEntity>,
+    searchQuery: String = "",
     hasPermission: Boolean,
     onRequestPermission: () -> Unit,
     onSyncDeviceLogs: () -> Unit,
@@ -458,69 +540,93 @@ fun CallsScreen(
                             .fillMaxWidth()
                             .padding(24.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "No Logs",
-                            tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "Calls list is empty",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = if (hasPermission) {
-                                "All real-time call logs have been triaged! Try syncing newly received call history."
-                            } else {
-                                "All call logs are triaged. Please grant permission or click below to seed mock logs for testing."
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 18.sp,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 8.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            if (hasPermission) {
-                                Button(
-                                    onClick = onSyncDeviceLogs,
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                    ),
-                                    modifier = Modifier.weight(1f).height(38.dp),
-                                    contentPadding = PaddingValues(0.dp),
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Sync Now", fontSize = 12.sp)
-                                }
-                            }
+                        if (searchQuery.isNotEmpty()) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "No Results",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "No search results match \"$searchQuery\"",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Try searching for a different contact name or phone number.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "No Logs",
+                                tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Calls list is empty",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = if (hasPermission) {
+                                    "All real-time call logs have been triaged! Try syncing newly received call history."
+                                } else {
+                                    "All call logs are triaged. Please grant permission or click below to seed mock logs for testing."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 18.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 8.dp)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
                             
-                            Button(
-                                onClick = onGenerateSample,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (hasPermission) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = if (hasPermission) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimaryContainer
-                                ),
-                                modifier = Modifier.weight(1.2f).height(38.dp),
-                                contentPadding = PaddingValues(0.dp),
-                                shape = RoundedCornerShape(10.dp),
-                                border = if (hasPermission) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)) else null
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Seed demo logs", fontSize = 11.sp)
+                                if (hasPermission) {
+                                    Button(
+                                        onClick = onSyncDeviceLogs,
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                        ),
+                                        modifier = Modifier.weight(1f).height(38.dp),
+                                        contentPadding = PaddingValues(0.dp),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Sync Now", fontSize = 12.sp)
+                                    }
+                                }
+                                
+                                Button(
+                                    onClick = onGenerateSample,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (hasPermission) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primaryContainer,
+                                        contentColor = if (hasPermission) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimaryContainer
+                                    ),
+                                    modifier = Modifier.weight(1.2f).height(38.dp),
+                                    contentPadding = PaddingValues(0.dp),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = if (hasPermission) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)) else null
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Seed demo logs", fontSize = 11.sp)
+                                }
                             }
                         }
                     }
@@ -713,6 +819,7 @@ fun CallLogCard(
 @Composable
 fun LeadsScreen(
     leads: List<LeadEntity>,
+    searchQuery: String = "",
     onEditNotes: (LeadEntity) -> Unit,
     onLongClickLead: (LeadEntity) -> Unit
 ) {
@@ -727,26 +834,51 @@ fun LeadsScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.FolderOpen,
-                    contentDescription = "Empty Leads",
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                    modifier = Modifier.size(72.dp)
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "No business leads found",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Verify logs under " + "Calls" + " tab and click Yes to transfer them here, or click the Add button below to add leads manually.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 20.sp,
-                    modifier = Modifier.padding(horizontal = 24.dp)
-                )
+                if (searchQuery.isNotEmpty()) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "No results",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.size(72.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "No leads match \"$searchQuery\"",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Try searching for a different lead name, phone number, or matching notes.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 20.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.FolderOpen,
+                        contentDescription = "Empty Leads",
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                        modifier = Modifier.size(72.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "No business leads found",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Verify logs under " + "Calls" + " tab and click Yes to transfer them here, or click the Add button below to add leads manually.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 20.sp,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
+                }
             }
         }
     } else {
@@ -759,7 +891,7 @@ fun LeadsScreen(
         ) {
             item {
                 Text(
-                    text = "My Active Leads (${leads.size})",
+                    text = if (searchQuery.isNotEmpty()) "Search results (${leads.size})" else "My Active Leads (${leads.size})",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary,
